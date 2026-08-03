@@ -2,8 +2,19 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, viewport-fit=cover">
 <title>EPP Portal · DOSSA PERÚ</title>
+
+<!-- PWA: instalar en Android/iPhone -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0b57d0">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="EPP Portal">
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
@@ -220,6 +231,33 @@
   @keyframes spin{to{transform:rotate(360deg);}}
   @media (prefers-reduced-motion: reduce){ .spinner{animation:none;} }
 
+  /* ---------- Blinking Friday-deadline notice ---------- */
+  .deadline-overlay{
+    position:fixed;inset:0;z-index:200;
+    display:flex;align-items:center;justify-content:center;padding:24px;
+    background:rgba(15,18,24,.55);
+    animation: deadlineFadeOut .5s ease 5.5s forwards;
+  }
+  .deadline-box{
+    background:linear-gradient(135deg, var(--red), var(--blue-dark));
+    color:#fff;border-radius:20px;padding:36px 30px;max-width:460px;width:100%;text-align:center;
+    box-shadow: 0 20px 60px rgba(0,0,0,.4);
+    animation: deadlineBlink 0.9s steps(1,end) infinite;
+  }
+  .deadline-icon{font-size:44px;margin-bottom:10px;}
+  .deadline-text{font-size:24px;font-weight:900;line-height:1.3;letter-spacing:.3px;}
+  .deadline-sub{font-size:13px;margin-top:12px;opacity:.9;font-weight:600;}
+  @keyframes deadlineBlink{
+    0%, 49%{ opacity:1; transform:scale(1); }
+    50%, 100%{ opacity:.55; transform:scale(.98); }
+  }
+  @keyframes deadlineFadeOut{
+    to{ opacity:0; visibility:hidden; }
+  }
+  @media (prefers-reduced-motion: reduce){
+    .deadline-box{ animation:none; }
+  }
+
   /* ---------- Admin password modal ---------- */
   .modal-overlay{
     position:fixed;inset:0;background:rgba(15,18,24,.5);
@@ -366,7 +404,7 @@
       <div class="card" style="padding:16px;overflow:auto;">
         <table class="admin-table" id="admin-table">
           <thead>
-            <tr><th>Pedido</th><th>Trabajador</th><th>Fotocheck</th><th>EPPs</th><th>Fecha</th><th>Estado</th></tr>
+            <tr><th>Pedido</th><th>Trabajador</th><th>Fotocheck</th><th>EPPs</th><th>Fecha</th><th>Estado</th><th>Acciones</th></tr>
           </thead>
           <tbody id="admin-tbody"></tbody>
         </table>
@@ -434,11 +472,46 @@
   </div>
 </div>
 
+<!-- Edit order modal -->
+<div id="edit-order-overlay" class="modal-overlay hidden">
+  <div class="modal-card" style="max-width:440px;">
+    <h2>Editar pedido <span id="edit-order-id" style="color:var(--blue);"></span></h2>
+    <p>Ajusta cantidades/talla o quita ítems. Los cambios se guardan en el Sheet.</p>
+    <div id="edit-order-items" style="display:flex;flex-direction:column;gap:8px;max-height:280px;overflow:auto;margin-bottom:10px;"></div>
+    <div class="error-msg" id="edit-order-error"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="btn-edit-order-cancel">Cancelar</button>
+      <button class="btn btn-primary" id="btn-edit-order-save">Guardar cambios</button>
+    </div>
+  </div>
+</div>
+
+<!-- Blinking deadline notice -->
+<div id="deadline-overlay" class="deadline-overlay hidden">
+  <div class="deadline-box">
+    <div class="deadline-icon">⏰</div>
+    <div class="deadline-text">¡LOS PEDIDOS DE EPPs SE RECIBEN<br>HASTA EL <u>VIERNES</u>!</div>
+    <div class="deadline-sub">Después de esa fecha no se procesarán hasta la próxima semana.</div>
+  </div>
+</div>
+
 <button class="admin-toggle" id="btn-admin-open" title="Panel de logística">⚙</button>
+
+<!-- Install app -->
+<button id="btn-install-app" class="btn btn-primary hidden" style="position:fixed;left:16px;bottom:16px;box-shadow:var(--shadow);z-index:60;">⬇ Instalar app</button>
+
+<div id="ios-install-banner" class="card hidden" style="position:fixed;left:12px;right:12px;bottom:16px;padding:14px 16px;z-index:60;display:flex;align-items:center;gap:10px;">
+  <div style="font-size:20px;">📲</div>
+  <div style="flex:1;font-size:12.5px;color:var(--ink-soft);line-height:1.4;">
+    Para instalarla: toca <b>Compartir</b> (el ícono ⬆︎ de Safari) y luego <b>"Agregar a pantalla de inicio"</b>.
+  </div>
+  <button id="btn-ios-banner-close" style="background:none;border:none;font-size:18px;color:var(--ink-soft);cursor:pointer;">✕</button>
+</div>
+
 
 <script>
 /* =========================================================================
-   CONFIGURACIÓN — pega aquí la URL de tu Google Apps Script ("/exec")
+   CONFIGURACIÓN — URL de tu Google Apps Script ("/exec")
    Ver Code.gs para las instrucciones de despliegue.
    ========================================================================= */
 const API_URL = "https://script.google.com/macros/s/AKfycbwu_HtWUZUsi_v2563FBMTusD5YngNAoRJrsfNifQWcXOerGH8ST0xQ6cUuMZeIVA8o/exec";
@@ -450,14 +523,17 @@ const STATUS = {
 };
 
 const ADMIN_CODE = "DRAGADOS-ADMIN";
-const APP_VERSION = "1.3.0";
+const APP_VERSION = "1.5.0";
+const CACHE_TTL_MS = 20000; // reuse fresh-enough data instead of re-fetching every tab switch
 
 /* ---------------- State ---------------- */
 let EPPS = [];
 let WORKERS = [];
 let ORDERS = [];
+let lastLoadedAt = 0;
 let currentWorker = null;
 let cart = {}; // code -> {qty, variant}
+let editingOrderId = null;
 
 /* ---------------- Helpers ---------------- */
 function wait(ms){ return new Promise(res=> setTimeout(res, ms)); }
@@ -533,6 +609,15 @@ async function loadAll(){
   EPPS = data.epps || [];
   WORKERS = data.workers || [];
   ORDERS = data.orders || [];
+  lastLoadedAt = Date.now();
+}
+
+// Uses the in-memory cache when it's recent enough, avoiding a network
+// round-trip on every tab switch — this is the main speed fix.
+async function ensureFreshData(force=false){
+  const age = Date.now() - lastLoadedAt;
+  if(!force && lastLoadedAt && age < CACHE_TTL_MS) return;
+  await loadAll();
 }
 
 /* ---------------- Views ---------------- */
@@ -566,7 +651,7 @@ async function doLogin(){
   const original = btn.textContent;
   btn.innerHTML = '<span class="spinner"></span>';
   try{
-    await loadAll(); // always refresh right before checking, in case admin just edited the sheet
+    await ensureFreshData(); // uses cache from init() when it's still fresh — usually instant
     const worker = findWorker(raw);
     if(!worker){
       errEl.textContent = 'No encontramos ese código de fotocheck.';
@@ -597,6 +682,18 @@ function enterDashboard(){
   renderEppList();
   switchTab('pedido');
   show('view-dashboard');
+  showDeadlineNotice();
+}
+
+function showDeadlineNotice(){
+  const el = document.getElementById('deadline-overlay');
+  el.classList.remove('hidden');
+  // restart the CSS animation each time it's shown
+  el.style.animation = 'none';
+  void el.offsetWidth;
+  el.style.animation = '';
+  el.addEventListener('click', ()=> el.classList.add('hidden'), { once:true });
+  setTimeout(()=> el.classList.add('hidden'), 6000);
 }
 
 /* ---------------- Tabs (dashboard) ---------------- */
@@ -762,16 +859,22 @@ async function sendOrder(){
   });
 
   try{
-    await apiPost({
+    const res = await apiPost({
       action: 'newOrder',
-      orderId: String(Date.now()),
       fotocheck: currentWorker.fotocheck,
       worker: currentWorker.name,
       items,
     }, 4);
+    // Push straight into the local cache instead of re-fetching everything.
+    const orderId = res.result && res.result.orderId ? res.result.orderId : String(Date.now());
+    const fecha = (res.result && res.result.fecha) ? res.result.fecha : new Date().toISOString();
+    ORDERS.push({
+      id: orderId, fecha, fotocheck: currentWorker.fotocheck, worker: currentWorker.name,
+      status:'solicitado', items,
+    });
     cart = {};
     renderEppList();
-    showToast('Pedido enviado. Puedes verlo en "Mis pedidos".');
+    showToast(`Pedido ${orderId} enviado. Puedes verlo en "Mis pedidos".`, 3200);
     switchTab('mios');
   }catch(err){
     console.error('Fallo al enviar pedido', err);
@@ -786,9 +889,12 @@ async function sendOrder(){
 /* ---------------- My orders ---------------- */
 async function renderMyOrders(){
   const container = document.getElementById('orders-list');
-  container.innerHTML = '<div class="empty"><span class="spinner" style="border-top-color:var(--blue);border-color:rgba(11,87,208,.25)"></span></div>';
+  const hadCache = ORDERS.length > 0 || lastLoadedAt > 0;
+  if(!hadCache){
+    container.innerHTML = '<div class="empty"><span class="spinner" style="border-top-color:var(--blue);border-color:rgba(11,87,208,.25)"></span></div>';
+  }
   try{
-    await loadAll();
+    await ensureFreshData();
     const orders = ORDERS.filter(o=> o.fotocheck === currentWorker.fotocheck)
                          .sort((a,b)=> new Date(b.fecha) - new Date(a.fecha));
     if(orders.length === 0){
@@ -804,14 +910,16 @@ async function renderMyOrders(){
     orders.forEach(o=> container.appendChild(orderCard(o)));
   }catch(err){
     console.error(err);
-    container.innerHTML = `
-      <div class="empty">
-        <p><b>No se pudo cargar tu historial</b></p>
-        <p>Hubo un problema momentáneo de conexión.</p>
-        <button class="btn btn-ghost" id="btn-retry-orders" style="margin-top:10px;">Reintentar</button>
-      </div>`;
-    const retryBtn = document.getElementById('btn-retry-orders');
-    if(retryBtn) retryBtn.addEventListener('click', renderMyOrders);
+    if(!hadCache){
+      container.innerHTML = `
+        <div class="empty">
+          <p><b>No se pudo cargar tu historial</b></p>
+          <p>Hubo un problema momentáneo de conexión.</p>
+          <button class="btn btn-ghost" id="btn-retry-orders" style="margin-top:10px;">Reintentar</button>
+        </div>`;
+      const retryBtn = document.getElementById('btn-retry-orders');
+      if(retryBtn) retryBtn.addEventListener('click', renderMyOrders);
+    }
   }
 }
 
@@ -820,10 +928,11 @@ function orderCard(o){
   const card = document.createElement('div');
   card.className = 'card order-card';
   const itemsText = o.items.map(itemLabel).join(', ');
+  const canCancel = o.status === 'solicitado';
   card.innerHTML = `
     <div class="order-top">
       <div>
-        <div class="order-id">Pedido #${o.id.slice(-6)}</div>
+        <div class="order-id">Pedido ${o.id}</div>
         <div class="order-date">${fmtDate(o.fecha)}</div>
       </div>
       <span class="pill ${st.cls}">${st.label}</span>
@@ -834,7 +943,26 @@ function orderCard(o){
       <div class="step ${st.step>=2?'done':''}"></div>
       <div class="step ${st.step>=3?'done':''}"></div>
     </div>
+    ${canCancel ? '<button class="btn btn-danger-ghost btn-sm" data-act="cancel-own" style="margin-top:10px;width:100%;">Cancelar pedido</button>' : ''}
   `;
+  if(canCancel){
+    card.querySelector('[data-act="cancel-own"]').addEventListener('click', async (e)=>{
+      if(!confirm(`¿Cancelar el pedido ${o.id}? Esta acción no se puede deshacer.`)) return;
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      btn.textContent = 'Cancelando...';
+      try{
+        await apiPost({ action:'deleteOrder', orderId:o.id }, 4);
+        ORDERS = ORDERS.filter(x=> x.id !== o.id);
+        showToast('Pedido cancelado.');
+        renderMyOrders();
+      }catch(err){
+        showToast('No se pudo cancelar: ' + (err.message||'error'));
+        btn.disabled = false;
+        btn.textContent = 'Cancelar pedido';
+      }
+    });
+  }
   return card;
 }
 
@@ -843,75 +971,196 @@ async function openAdmin(){
   show('view-admin');
   const tbody = document.getElementById('admin-tbody');
   const emptyEl = document.getElementById('admin-empty');
-  tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:24px;"><span class="spinner" style="border-top-color:var(--blue);border-color:rgba(11,87,208,.25)"></span></td></tr>`;
+  const hadCache = ORDERS.length > 0 || lastLoadedAt > 0;
+  if(!hadCache){
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:24px;"><span class="spinner" style="border-top-color:var(--blue);border-color:rgba(11,87,208,.25)"></span></td></tr>`;
+  }
   emptyEl.classList.add('hidden');
 
   try{
-    await loadAll();
-    const orders = ORDERS.slice().sort((a,b)=> new Date(b.fecha) - new Date(a.fecha));
-
-    if(orders.length === 0){
-      tbody.innerHTML = '';
-      emptyEl.classList.remove('hidden');
-      emptyEl.querySelector('p b').textContent = 'Todavía no hay pedidos';
-      return;
-    }
-
-    tbody.innerHTML = '';
-    orders.forEach(order=>{
-      const tr = document.createElement('tr');
-      const itemsText = order.items.map(itemLabel).join(', ');
-      tr.innerHTML = `
-        <td>#${order.id.slice(-6)}</td>
-        <td>${order.worker}</td>
-        <td>${order.fotocheck}</td>
-        <td>${itemsText}</td>
-        <td>${fmtDate(order.fecha)}</td>
-        <td></td>
-      `;
-      const sel = document.createElement('select');
-      sel.className = 'status-select';
-      Object.entries(STATUS).forEach(([val, s])=>{
-        const opt = document.createElement('option');
-        opt.value = val; opt.textContent = s.label;
-        if(order.status === val) opt.selected = true;
-        sel.appendChild(opt);
-      });
-      sel.addEventListener('change', async ()=>{
-        sel.disabled = true;
-        try{
-          await apiPost({ action:'updateStatus', orderId: order.id, status: sel.value }, 4);
-          order.status = sel.value;
-          showToast('Estado actualizado.');
-        }catch(e){
-          showToast('No se pudo actualizar el estado: ' + (e.message || 'error'));
-          sel.value = order.status;
-        }finally{
-          sel.disabled = false;
-        }
-      });
-      tr.lastElementChild.appendChild(sel);
-      tbody.appendChild(tr);
-    });
+    await ensureFreshData();
+    renderAdminOrdersTable();
   }catch(err){
     console.error(err);
-    tbody.innerHTML = '';
-    emptyEl.classList.remove('hidden');
-    emptyEl.querySelector('p b').textContent = 'No se pudo cargar los pedidos';
-    const p2 = emptyEl.querySelectorAll('p')[1];
-    if(p2){
-      p2.innerHTML = '';
-      const retryBtn = document.createElement('button');
-      retryBtn.className = 'btn btn-ghost';
-      retryBtn.textContent = 'Reintentar';
-      retryBtn.style.marginTop = '8px';
-      retryBtn.addEventListener('click', openAdmin);
-      p2.appendChild(retryBtn);
+    if(!hadCache){
+      tbody.innerHTML = '';
+      emptyEl.classList.remove('hidden');
+      emptyEl.querySelector('p b').textContent = 'No se pudo cargar los pedidos';
+      const p2 = emptyEl.querySelectorAll('p')[1];
+      if(p2){
+        p2.innerHTML = '';
+        const retryBtn = document.createElement('button');
+        retryBtn.className = 'btn btn-ghost';
+        retryBtn.textContent = 'Reintentar';
+        retryBtn.style.marginTop = '8px';
+        retryBtn.addEventListener('click', openAdmin);
+        p2.appendChild(retryBtn);
+      }
+    } else {
+      showToast('No se pudo actualizar la lista de pedidos.');
+      renderAdminOrdersTable(); // still show what we have cached
     }
   }
 }
+
+function renderAdminOrdersTable(){
+  const tbody = document.getElementById('admin-tbody');
+  const emptyEl = document.getElementById('admin-empty');
+  const orders = ORDERS.slice().sort((a,b)=> new Date(b.fecha) - new Date(a.fecha));
+
+  if(orders.length === 0){
+    tbody.innerHTML = '';
+    emptyEl.classList.remove('hidden');
+    emptyEl.querySelector('p b').textContent = 'Todavía no hay pedidos';
+    return;
+  }
+  emptyEl.classList.add('hidden');
+
+  tbody.innerHTML = '';
+  orders.forEach(order=>{
+    const tr = document.createElement('tr');
+    const itemsText = order.items.map(itemLabel).join(', ');
+    tr.innerHTML = `
+      <td>${order.id}</td>
+      <td>${order.worker}</td>
+      <td>${order.fotocheck}</td>
+      <td>${itemsText}</td>
+      <td>${fmtDate(order.fecha)}</td>
+      <td></td>
+      <td></td>
+    `;
+    const sel = document.createElement('select');
+    sel.className = 'status-select';
+    Object.entries(STATUS).forEach(([val, s])=>{
+      const opt = document.createElement('option');
+      opt.value = val; opt.textContent = s.label;
+      if(order.status === val) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    sel.addEventListener('change', async ()=>{
+      sel.disabled = true;
+      try{
+        await apiPost({ action:'updateStatus', orderId: order.id, status: sel.value }, 4);
+        order.status = sel.value;
+        showToast('Estado actualizado.');
+      }catch(e){
+        showToast('No se pudo actualizar el estado: ' + (e.message || 'error'));
+        sel.value = order.status;
+      }finally{
+        sel.disabled = false;
+      }
+    });
+    tr.children[5].appendChild(sel);
+
+    const actionsCell = tr.children[6];
+    actionsCell.style.whiteSpace = 'nowrap';
+    const editBtn = document.createElement('button');
+    editBtn.className = 'btn btn-ghost btn-sm';
+    editBtn.textContent = 'Editar';
+    editBtn.style.marginRight = '6px';
+    editBtn.addEventListener('click', ()=> openEditOrder(order));
+    const delBtn = document.createElement('button');
+    delBtn.className = 'btn btn-danger-ghost btn-sm';
+    delBtn.textContent = 'Eliminar';
+    delBtn.addEventListener('click', async ()=>{
+      if(!confirm(`¿Eliminar el pedido ${order.id} de "${order.worker}"?`)) return;
+      delBtn.disabled = true;
+      try{
+        await apiPost({ action:'deleteOrder', orderId: order.id }, 4);
+        ORDERS = ORDERS.filter(o=> o.id !== order.id);
+        showToast('Pedido eliminado.');
+        renderAdminOrdersTable();
+      }catch(err){
+        showToast('No se pudo eliminar: ' + (err.message||'error'));
+        delBtn.disabled = false;
+      }
+    });
+    actionsCell.appendChild(editBtn);
+    actionsCell.appendChild(delBtn);
+
+    tbody.appendChild(tr);
+  });
+}
+
 document.getElementById('btn-admin-exit').addEventListener('click', ()=> show('view-login'));
-document.getElementById('btn-refresh-orders').addEventListener('click', openAdmin);
+document.getElementById('btn-refresh-orders').addEventListener('click', ()=> openAdmin());
+
+/* ---------------- Edit order modal ---------------- */
+const editOrderOverlay = document.getElementById('edit-order-overlay');
+const editOrderItemsEl = document.getElementById('edit-order-items');
+const editOrderError = document.getElementById('edit-order-error');
+let editDraftItems = [];
+
+function openEditOrder(order){
+  editingOrderId = order.id;
+  editDraftItems = order.items.map(it => ({...it}));
+  document.getElementById('edit-order-id').textContent = order.id;
+  editOrderError.textContent = '';
+  renderEditDraft();
+  editOrderOverlay.classList.remove('hidden');
+}
+function closeEditOrder(){
+  editOrderOverlay.classList.add('hidden');
+  editingOrderId = null;
+}
+function renderEditDraft(){
+  editOrderItemsEl.innerHTML = '';
+  if(editDraftItems.length === 0){
+    editOrderItemsEl.innerHTML = '<p style="font-size:13px;color:var(--ink-soft);">Sin ítems — al guardar, este pedido quedará vacío. Mejor usa "Eliminar".</p>';
+    return;
+  }
+  editDraftItems.forEach((it, idx)=>{
+    const row = document.createElement('div');
+    row.className = 'admin-list-row';
+    row.style.flexWrap = 'wrap';
+    row.innerHTML = `
+      <div style="flex:1;min-width:160px;font-size:13px;font-weight:700;">${it.desc}</div>
+      <div class="qty" style="display:flex;">
+        <button type="button" data-act="dec">−</button>
+        <span>${it.qty}</span>
+        <button type="button" data-act="inc">+</button>
+      </div>
+      ${it.hasOwnProperty('variant') ? `<input type="text" class="edit-variant" placeholder="Talla" value="${it.variant||''}" style="width:70px;padding:7px 8px;border:1.5px solid var(--line);border-radius:8px;font-size:12.5px;">` : ''}
+      <button class="btn btn-danger-ghost btn-sm" data-act="remove">Quitar</button>
+    `;
+    row.querySelector('[data-act="inc"]').addEventListener('click', ()=>{
+      editDraftItems[idx].qty++;
+      renderEditDraft();
+    });
+    row.querySelector('[data-act="dec"]').addEventListener('click', ()=>{
+      if(editDraftItems[idx].qty > 1){ editDraftItems[idx].qty--; renderEditDraft(); }
+    });
+    const variantInput = row.querySelector('.edit-variant');
+    if(variantInput){
+      variantInput.addEventListener('input', ()=>{ editDraftItems[idx].variant = variantInput.value.trim(); });
+    }
+    row.querySelector('[data-act="remove"]').addEventListener('click', ()=>{
+      editDraftItems.splice(idx,1);
+      renderEditDraft();
+    });
+    editOrderItemsEl.appendChild(row);
+  });
+}
+document.getElementById('btn-edit-order-cancel').addEventListener('click', closeEditOrder);
+document.getElementById('btn-edit-order-save').addEventListener('click', async ()=>{
+  const btn = document.getElementById('btn-edit-order-save');
+  btn.disabled = true;
+  const original = btn.textContent;
+  btn.innerHTML = '<span class="spinner" style="border-top-color:#fff;"></span>';
+  try{
+    await apiPost({ action:'updateOrderItems', orderId: editingOrderId, items: editDraftItems }, 4);
+    const order = ORDERS.find(o=> o.id === editingOrderId);
+    if(order) order.items = editDraftItems.map(it=>({...it}));
+    showToast('Pedido actualizado.');
+    closeEditOrder();
+    renderAdminOrdersTable();
+  }catch(err){
+    editOrderError.textContent = 'No se pudo guardar: ' + (err.message||'error');
+  }finally{
+    btn.disabled = false;
+    btn.textContent = original;
+  }
+});
 
 /* ---------------- Export consolidado ---------------- */
 function exportDateStamp(){
@@ -926,7 +1175,7 @@ function buildRowsFromOrders(matched){
     const st = STATUS[order.status] || STATUS.solicitado;
     order.items.forEach(item=>{
       rows.push({
-        pedido: order.id.slice(-6),
+        pedido: order.id,
         uniqNum: item.code,
         descripcion: item.desc,
         variante: item.variant || '',
@@ -947,7 +1196,7 @@ async function runExport(btn, fn){
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner" style="border-top-color:currentColor;border-color:rgba(0,0,0,.2)"></span>';
   try{
-    await loadAll();
+    await ensureFreshData(true);
     const matched = ORDERS.filter(o=> o.status === 'solicitado');
     if(matched.length === 0){
       showToast('No hay pedidos en estado "Solicitado" para exportar.');
@@ -956,8 +1205,9 @@ async function runExport(btn, fn){
     const rows = buildRowsFromOrders(matched);
     fn(rows);
     await apiPost({ action:'bulkUpdateStatus', orderIds: matched.map(o=>o.id), status:'pedido' }, 4);
+    matched.forEach(o=> o.status = 'pedido');
     showToast(`${matched.length} pedido(s) pasaron a estado "Pedido".`);
-    openAdmin();
+    renderAdminOrdersTable();
   }catch(err){
     console.error(err);
     showToast('No se pudo generar el archivo: ' + (err.message || 'error'), 4000);
@@ -967,16 +1217,18 @@ async function runExport(btn, fn){
   }
 }
 
+// Header block mirrors the original "FORMATO" sheet: Nº PEDIDO / título /
+// FECHA, then the UNIQ NUM · DESCRIPCION · VARIANTE · USUARIO · AREA table.
 function exportToExcel(rows){
   const aoa = [];
-  aoa.push(['Nº PEDIDO', "SOLICITUD DE EPI's", '', '', '', '', '', '']);
-  aoa.push(['CONSOLIDADO', '', '', '', '', '', '', '']);
-  aoa.push(['FECHA', '', '', '', '', '', '', '']);
-  aoa.push([new Date().toLocaleString('es-PE'), '', '', '', '', '', '', '']);
+  aoa.push(['Nº PEDIDO', "SOLICITUD DE EPI's", '', '', '', '', '']);
+  aoa.push(['CONSOLIDADO', '', '', '', '', '', '']);
+  aoa.push(['FECHA', '', '', '', '', '', '']);
+  aoa.push([new Date().toLocaleString('es-PE'), '', '', '', '', '', '']);
   aoa.push([]);
-  aoa.push(['UNIQ NUM','DESCRIPCION','VARIANTE','CANTIDAD','USUARIO','FOTOCHECK','AREA','ESTADO','Nº PEDIDO','FECHA PEDIDO']);
+  aoa.push(['UNIQ NUM','DESCRIPCION','VARIANTE','USUARIO','AREA','CANTIDAD','FOTOCHECK','ESTADO','Nº PEDIDO','FECHA PEDIDO']);
   rows.forEach(r=>{
-    aoa.push([r.uniqNum, r.descripcion, r.variante, r.cantidad, r.usuario, r.fotocheck, '', r.estado, r.pedido, fmtDate(r.fecha)]);
+    aoa.push([r.uniqNum, r.descripcion, r.variante, r.usuario, '', r.cantidad, r.fotocheck, r.estado, r.pedido, fmtDate(r.fecha)]);
   });
   aoa.push([]);
   aoa.push(['by GUSTAVO DEVELOPER']);
@@ -984,7 +1236,7 @@ function exportToExcel(rows){
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   ws['!cols'] = [
-    {wch:18},{wch:42},{wch:10},{wch:9},{wch:28},{wch:10},{wch:12},{wch:15},{wch:10},{wch:16}
+    {wch:18},{wch:42},{wch:10},{wch:28},{wch:12},{wch:9},{wch:10},{wch:15},{wch:14},{wch:16}
   ];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "EPI Consolidado");
@@ -998,7 +1250,7 @@ function exportToPDF(rows){
 
   doc.setFontSize(15);
   doc.setTextColor(20,25,35);
-  doc.text("SOLICITUD DE EPI's — CONSOLIDADO", 14, 15);
+  doc.text("SOLICITUD DE EPI's", 14, 15);
   doc.setFontSize(10);
   doc.setTextColor(90);
   doc.text('Nº PEDIDO: CONSOLIDADO', 14, 22);
@@ -1006,8 +1258,8 @@ function exportToPDF(rows){
 
   doc.autoTable({
     startY: 33,
-    head: [['UNIQ NUM','DESCRIPCION','VARIANTE','CANT.','USUARIO','FOTOCHECK','ESTADO','Nº PEDIDO','FECHA PEDIDO']],
-    body: rows.map(r=>[r.uniqNum, r.descripcion, r.variante || '-', r.cantidad, r.usuario, r.fotocheck, r.estado, r.pedido, fmtDate(r.fecha)]),
+    head: [['UNIQ NUM','DESCRIPCION','VARIANTE','USUARIO','AREA','CANT.','FOTOCHECK','ESTADO','Nº PEDIDO','FECHA PEDIDO']],
+    body: rows.map(r=>[r.uniqNum, r.descripcion, r.variante || '-', r.usuario, '', r.cantidad, r.fotocheck, r.estado, r.pedido, fmtDate(r.fecha)]),
     styles:{fontSize:8, cellPadding:3},
     headStyles:{fillColor:[11,87,208], textColor:255},
     alternateRowStyles:{fillColor:[240,243,247]},
@@ -1054,8 +1306,8 @@ function renderEppsAdmin(){
       btn.disabled = true;
       try{
         await apiPost({ action:'updateEpp', oldCode:item.code, code, desc, needsVariant }, 4);
+        item.code = code; item.desc = desc; item.needsVariant = needsVariant;
         showToast('EPP actualizado.');
-        await loadAll();
         renderEppsAdmin();
       }catch(err){
         showToast('No se pudo actualizar: ' + (err.message||'error'));
@@ -1067,8 +1319,8 @@ function renderEppsAdmin(){
       btn.disabled = true;
       try{
         await apiPost({ action:'deleteEpp', code:item.code }, 4);
+        EPPS = EPPS.filter(x=> x.code !== item.code);
         showToast('EPP eliminado.');
-        await loadAll();
         renderEppsAdmin();
       }catch(err){
         showToast('No se pudo eliminar: ' + (err.message||'error'));
@@ -1091,9 +1343,9 @@ document.getElementById('btn-add-epp').addEventListener('click', async (e)=>{
   btn.disabled = true;
   try{
     await apiPost({ action:'addEpp', code, desc, needsVariant: variantEl.checked }, 4);
+    EPPS.push({ code, desc, needsVariant: variantEl.checked });
     codeEl.value = ''; descEl.value = ''; variantEl.checked = false;
     showToast('EPP agregado.');
-    await loadAll();
     renderEppsAdmin();
   }catch(err){
     showToast('No se pudo agregar: ' + (err.message||'error'));
@@ -1101,7 +1353,7 @@ document.getElementById('btn-add-epp').addEventListener('click', async (e)=>{
 });
 
 document.getElementById('btn-refresh-epps').addEventListener('click', async ()=>{
-  try{ await loadAll(); renderEppsAdmin(); showToast('Lista de EPPs actualizada.'); }
+  try{ await ensureFreshData(true); renderEppsAdmin(); showToast('Lista de EPPs actualizada.'); }
   catch(err){ showToast('No se pudo actualizar: ' + (err.message||'error')); }
 });
 
@@ -1130,8 +1382,8 @@ function renderWorkersAdmin(){
       btn.disabled = true;
       try{
         await apiPost({ action:'updateWorker', oldFotocheck:w.fotocheck, fotocheck, name }, 4);
+        w.fotocheck = fotocheck; w.name = name;
         showToast('Trabajador actualizado.');
-        await loadAll();
         renderWorkersAdmin();
       }catch(err){
         showToast('No se pudo actualizar: ' + (err.message||'error'));
@@ -1143,8 +1395,8 @@ function renderWorkersAdmin(){
       btn.disabled = true;
       try{
         await apiPost({ action:'deleteWorker', fotocheck:w.fotocheck }, 4);
+        WORKERS = WORKERS.filter(x=> x.fotocheck !== w.fotocheck);
         showToast('Trabajador eliminado.');
-        await loadAll();
         renderWorkersAdmin();
       }catch(err){
         showToast('No se pudo eliminar: ' + (err.message||'error'));
@@ -1166,9 +1418,9 @@ document.getElementById('btn-add-worker').addEventListener('click', async (e)=>{
   btn.disabled = true;
   try{
     await apiPost({ action:'addWorker', fotocheck, name }, 4);
+    WORKERS.push({ fotocheck, name });
     codeEl.value = ''; nameEl.value = '';
     showToast('Trabajador agregado.');
-    await loadAll();
     renderWorkersAdmin();
   }catch(err){
     showToast('No se pudo agregar: ' + (err.message||'error'));
@@ -1176,8 +1428,39 @@ document.getElementById('btn-add-worker').addEventListener('click', async (e)=>{
 });
 
 document.getElementById('btn-refresh-workers').addEventListener('click', async ()=>{
-  try{ await loadAll(); renderWorkersAdmin(); showToast('Lista de trabajadores actualizada.'); }
+  try{ await ensureFreshData(true); renderWorkersAdmin(); showToast('Lista de trabajadores actualizada.'); }
   catch(err){ showToast('No se pudo actualizar: ' + (err.message||'error')); }
+});
+
+/* ---------------- PWA: instalación en Android/iPhone ---------------- */
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('service-worker.js').catch(e=> console.error('SW error', e));
+  });
+}
+
+const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+
+let deferredInstallPrompt = null;
+window.addEventListener('beforeinstallprompt', (e)=>{
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  if(!isStandalone) document.getElementById('btn-install-app').classList.remove('hidden');
+});
+document.getElementById('btn-install-app').addEventListener('click', async ()=>{
+  if(!deferredInstallPrompt) return;
+  deferredInstallPrompt.prompt();
+  await deferredInstallPrompt.userChoice;
+  deferredInstallPrompt = null;
+  document.getElementById('btn-install-app').classList.add('hidden');
+});
+
+if(isIOS && !isStandalone){
+  document.getElementById('ios-install-banner').classList.remove('hidden');
+}
+document.getElementById('btn-ios-banner-close').addEventListener('click', ()=>{
+  document.getElementById('ios-install-banner').classList.add('hidden');
 });
 
 /* ---------------- Init ---------------- */
@@ -1186,14 +1469,14 @@ document.getElementById('btn-refresh-workers').addEventListener('click', async (
 
   if(!apiConfigured()){
     document.getElementById('config-banner').classList.remove('hidden');
-    return; // don't attempt to load data with no API configured
+    return;
   }
 
   const loginBtn = document.getElementById('btn-login');
   loginBtn.disabled = true;
   loginBtn.textContent = 'Cargando...';
   try{
-    await loadAll();
+    await loadAll(); // warms the cache once so login/first tab switches feel instant
   }catch(e){
     console.error(e);
     document.getElementById('login-error').textContent = 'No se pudo conectar con Google Sheets. Verifica la conexión.';
