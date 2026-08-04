@@ -463,7 +463,14 @@
   <div class="modal-card">
     <h2>Modo administrador</h2>
     <p>Ingresa la contraseña maestra para entrar al Panel de logística.</p>
+
+    <button id="btn-biometric-login" class="btn btn-secondary hidden" style="width:100%;margin-bottom:14px;">👆 Entrar con huella / Face ID</button>
+
     <input id="admin-password-input" type="password" placeholder="Contraseña maestra" autocomplete="off">
+    <label id="remember-device-label" class="hidden" style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--ink-soft);font-weight:600;margin-top:8px;">
+      <input type="checkbox" id="remember-device-checkbox" style="width:16px;height:16px;">
+      Recordar este dispositivo con huella/Face ID
+    </label>
     <div class="error-msg" id="admin-modal-error"></div>
     <div class="modal-actions">
       <button class="btn btn-ghost" id="btn-admin-modal-cancel">Cancelar</button>
@@ -523,7 +530,7 @@ const STATUS = {
 };
 
 const ADMIN_CODE = "DRAGADOS-ADMIN";
-const APP_VERSION = "1.5.0";
+const APP_VERSION = "1.6.0";
 const CACHE_TTL_MS = 20000; // reuse fresh-enough data instead of re-fetching every tab switch
 
 /* ---------------- State ---------------- */
@@ -724,22 +731,108 @@ function switchAdminTab(tab){
 const adminOverlay = document.getElementById('admin-modal-overlay');
 const adminPasswordInput = document.getElementById('admin-password-input');
 const adminModalError = document.getElementById('admin-modal-error');
+const BIOMETRIC_KEY = 'epp_portal_admin_biometric_id';
+
+function b64ToBuf(b64){
+  const bin = atob(b64.replace(/-/g,'+').replace(/_/g,'/'));
+  const bytes = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
+  return bytes.buffer;
+}
+function bufToB64(buf){
+  const bytes = new Uint8Array(buf);
+  let bin = '';
+  bytes.forEach(b=> bin += String.fromCharCode(b));
+  return btoa(bin);
+}
+
+function hasBiometricCredential(){
+  try{ return !!localStorage.getItem(BIOMETRIC_KEY); }catch(e){ return false; }
+}
+
+async function biometricAvailable(){
+  return !!(window.PublicKeyCredential && navigator.credentials &&
+    await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable().catch(()=>false));
+}
+
+// Only called right after the correct master password was typed — that's
+// what makes "register a fingerprint" a safe alternate entry, not a bypass.
+async function registerBiometric(){
+  try{
+    const cred = await navigator.credentials.create({
+      publicKey: {
+        challenge: crypto.getRandomValues(new Uint8Array(32)),
+        rp: { name: 'EPP Portal DOSSA PERÚ' },
+        user: { id: crypto.getRandomValues(new Uint8Array(16)), name: 'admin-dossa', displayName: 'Administrador EPP Portal' },
+        pubKeyCredParams: [{ type:'public-key', alg:-7 }, { type:'public-key', alg:-257 }],
+        authenticatorSelection: { authenticatorAttachment:'platform', userVerification:'required' },
+        timeout: 60000,
+        attestation: 'none',
+      }
+    });
+    localStorage.setItem(BIOMETRIC_KEY, bufToB64(cred.rawId));
+    showToast('Huella / Face ID registrada en este dispositivo.');
+  }catch(err){
+    console.error(err);
+    showToast('No se pudo registrar la huella: ' + (err.message || 'error'));
+  }
+}
+
+async function loginWithBiometric(){
+  const credId = (()=>{ try{ return localStorage.getItem(BIOMETRIC_KEY); }catch(e){ return null; } })();
+  if(!credId) return;
+  try{
+    const assertion = await navigator.credentials.get({
+      publicKey: {
+        challenge: crypto.getRandomValues(new Uint8Array(32)),
+        allowCredentials: [{ id: b64ToBuf(credId), type:'public-key' }],
+        userVerification: 'required',
+        timeout: 60000,
+      }
+    });
+    if(assertion){
+      closeAdminGate();
+      switchAdminTab('pedidos');
+      openAdmin();
+    }
+  }catch(err){
+    console.error(err);
+    showToast('No se reconoció la huella. Usa la contraseña.');
+  }
+}
+document.getElementById('btn-biometric-login').addEventListener('click', loginWithBiometric);
+
+async function refreshBiometricUI(){
+  const btn = document.getElementById('btn-biometric-login');
+  const label = document.getElementById('remember-device-label');
+  const checkbox = document.getElementById('remember-device-checkbox');
+  const available = await biometricAvailable();
+  const registered = hasBiometricCredential();
+  btn.classList.toggle('hidden', !(available && registered));
+  label.classList.toggle('hidden', !(available && !registered));
+  if(checkbox) checkbox.checked = false;
+}
 
 function openAdminGate(){
   adminPasswordInput.value = '';
   adminModalError.textContent = '';
   adminOverlay.classList.remove('hidden');
+  refreshBiometricUI();
   setTimeout(()=> adminPasswordInput.focus(), 30);
 }
 function closeAdminGate(){
   adminOverlay.classList.add('hidden');
 }
-function checkAdminPassword(){
+async function checkAdminPassword(){
   const val = adminPasswordInput.value.trim();
   if(val.toUpperCase() === ADMIN_CODE){
+    const rememberBox = document.getElementById('remember-device-checkbox');
+    const rememberLabel = document.getElementById('remember-device-label');
+    const shouldRegister = rememberBox && rememberLabel && !rememberLabel.classList.contains('hidden') && rememberBox.checked;
     closeAdminGate();
     switchAdminTab('pedidos');
     openAdmin();
+    if(shouldRegister) await registerBiometric();
   } else {
     adminModalError.textContent = 'Contraseña incorrecta.';
   }
@@ -928,7 +1021,7 @@ function orderCard(o){
   const card = document.createElement('div');
   card.className = 'card order-card';
   const itemsText = o.items.map(itemLabel).join(', ');
-  const canCancel = o.status === 'solicitado';
+  const canCancel = o.status === 'solicitado' || o.status === 'pedido';
   card.innerHTML = `
     <div class="order-top">
       <div>
