@@ -444,6 +444,7 @@
         <div class="admin-add-row">
           <input id="new-worker-code" placeholder="Fotocheck" inputmode="numeric">
           <input id="new-worker-name" placeholder="Nombre completo">
+          <input id="new-worker-area" placeholder="Área">
           <button class="btn btn-secondary" id="btn-add-worker">+ Agregar trabajador</button>
         </div>
       </div>
@@ -530,7 +531,7 @@ const STATUS = {
 };
 
 const ADMIN_CODE = "DRAGADOS-ADMIN";
-const APP_VERSION = "1.6.0";
+const APP_VERSION = "1.7.1";
 const CACHE_TTL_MS = 20000; // reuse fresh-enough data instead of re-fetching every tab switch
 
 /* ---------------- State ---------------- */
@@ -1266,6 +1267,8 @@ function buildRowsFromOrders(matched){
   const rows = [];
   matched.forEach(order=>{
     const st = STATUS[order.status] || STATUS.solicitado;
+    const worker = findWorker(order.fotocheck);
+    const area = worker ? (worker.area || '') : '';
     order.items.forEach(item=>{
       rows.push({
         pedido: order.id,
@@ -1274,13 +1277,19 @@ function buildRowsFromOrders(matched){
         variante: item.variant || '',
         cantidad: item.qty || 1,
         usuario: order.worker,
+        area,
         fotocheck: order.fotocheck,
         estado: st.label,
         fecha: order.fecha,
       });
     });
   });
-  rows.sort((a,b)=> a.descripcion.localeCompare(b.descripcion, 'es') || a.usuario.localeCompare(b.usuario, 'es'));
+  // Orden alfabético por DESCRIPCION (ignorando mayúsculas/tildes), y como
+  // desempate, por USUARIO — así los pedidos del mismo EPP quedan juntos.
+  rows.sort((a,b)=>
+    a.descripcion.localeCompare(b.descripcion, 'es', { sensitivity:'base' }) ||
+    a.usuario.localeCompare(b.usuario, 'es', { sensitivity:'base' })
+  );
   return rows;
 }
 
@@ -1314,14 +1323,14 @@ async function runExport(btn, fn){
 // FECHA, then the UNIQ NUM · DESCRIPCION · VARIANTE · USUARIO · AREA table.
 function exportToExcel(rows){
   const aoa = [];
-  aoa.push(['Nº PEDIDO', "SOLICITUD DE EPI's", '', '', '', '', '']);
-  aoa.push(['CONSOLIDADO', '', '', '', '', '', '']);
-  aoa.push(['FECHA', '', '', '', '', '', '']);
-  aoa.push([new Date().toLocaleString('es-PE'), '', '', '', '', '', '']);
+  aoa.push(['Nº PEDIDO', "SOLICITUD DE EPI's", '', '', '']);
+  aoa.push(['', '', '', '', '']);
+  aoa.push(['FECHA', '', '', '', '']);
+  aoa.push([new Date().toLocaleDateString('es-PE'), '', '', '', '']);
   aoa.push([]);
   aoa.push(['UNIQ NUM','DESCRIPCION','VARIANTE','USUARIO','AREA','CANTIDAD','FOTOCHECK','ESTADO','Nº PEDIDO','FECHA PEDIDO']);
   rows.forEach(r=>{
-    aoa.push([r.uniqNum, r.descripcion, r.variante, r.usuario, '', r.cantidad, r.fotocheck, r.estado, r.pedido, fmtDate(r.fecha)]);
+    aoa.push([r.uniqNum, r.descripcion, r.variante, r.usuario, r.area, r.cantidad, r.fotocheck, r.estado, r.pedido, fmtDate(r.fecha)]);
   });
   aoa.push([]);
   aoa.push(['by GUSTAVO DEVELOPER']);
@@ -1330,6 +1339,9 @@ function exportToExcel(rows){
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   ws['!cols'] = [
     {wch:18},{wch:42},{wch:10},{wch:28},{wch:12},{wch:9},{wch:10},{wch:15},{wch:14},{wch:16}
+  ];
+  ws['!merges'] = [
+    { s:{r:0,c:1}, e:{r:1,c:4} }, // "SOLICITUD DE EPI's" title spans over the label rows
   ];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "EPI Consolidado");
@@ -1340,19 +1352,44 @@ function exportToExcel(rows){
 function exportToPDF(rows){
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({orientation:'landscape'});
+  const pageWidth = doc.internal.pageSize.getWidth();
 
-  doc.setFontSize(15);
+  // --- Header block: mirrors the "SOLICITUD DE EPI's" model ---
+  const boxX = 14, boxY = 10, boxW = 46, boxH = 22;
+  doc.setDrawColor(0);
+  doc.setLineWidth(0.4);
+  doc.rect(boxX, boxY, boxW, boxH);
+  const midY = boxY + boxH/2;
+  doc.line(boxX, midY, boxX+boxW, midY);
+
+  doc.setFont(undefined, 'bold');
+  doc.setFontSize(9);
   doc.setTextColor(20,25,35);
-  doc.text("SOLICITUD DE EPI's", 14, 15);
-  doc.setFontSize(10);
-  doc.setTextColor(90);
-  doc.text('Nº PEDIDO: CONSOLIDADO', 14, 22);
-  doc.text('FECHA: ' + new Date().toLocaleString('es-PE'), 14, 27);
+  doc.text('Nº PEDIDO', boxX + boxW/2, boxY + 8, { align:'center' });
+  doc.text('FECHA', boxX + boxW/2, midY + 6, { align:'center' });
+  doc.setFont(undefined, 'normal');
+  doc.text(new Date().toLocaleDateString('es-PE'), boxX + boxW/2, midY + 12, { align:'center' });
+
+  doc.setFontSize(22);
+  doc.setFont(undefined, 'normal');
+  doc.text("SOLICITUD DE EPI's", pageWidth/2, boxY + boxH/2 + 3, { align:'center' });
+
+  // Logo (reuses the app's own header icon, already loaded as a data URI)
+  try{
+    const logoImg = document.querySelector('.badge-icon img');
+    if(logoImg && logoImg.src){
+      doc.addImage(logoImg.src, 'PNG', pageWidth - 14 - boxH, boxY, boxH, boxH);
+    }
+  }catch(e){ /* logo is optional, table export still works without it */ }
+
+  doc.setDrawColor(0);
+  doc.setLineWidth(0.3);
+  doc.line(14, boxY + boxH + 5, pageWidth - 14, boxY + boxH + 5);
 
   doc.autoTable({
-    startY: 33,
+    startY: boxY + boxH + 9,
     head: [['UNIQ NUM','DESCRIPCION','VARIANTE','USUARIO','AREA','CANT.','FOTOCHECK','ESTADO','Nº PEDIDO','FECHA PEDIDO']],
-    body: rows.map(r=>[r.uniqNum, r.descripcion, r.variante || '-', r.usuario, '', r.cantidad, r.fotocheck, r.estado, r.pedido, fmtDate(r.fecha)]),
+    body: rows.map(r=>[r.uniqNum, r.descripcion, r.variante || '-', r.usuario, r.area || '-', r.cantidad, r.fotocheck, r.estado, r.pedido, fmtDate(r.fecha)]),
     styles:{fontSize:8, cellPadding:3},
     headStyles:{fillColor:[11,87,208], textColor:255},
     alternateRowStyles:{fillColor:[240,243,247]},
@@ -1464,6 +1501,7 @@ function renderWorkersAdmin(){
     row.innerHTML = `
       <input type="text" class="f-code" value="${w.fotocheck}">
       <input type="text" class="f-desc" value="${w.name}">
+      <input type="text" class="f-area" value="${w.area||''}" placeholder="Área" style="width:100px;">
       <button class="btn btn-secondary btn-sm" data-act="save">Guardar</button>
       <button class="btn btn-danger-ghost btn-sm" data-act="del">Eliminar</button>
     `;
@@ -1471,11 +1509,12 @@ function renderWorkersAdmin(){
       const btn = e.currentTarget;
       const fotocheck = row.querySelector('.f-code').value.trim();
       const name = row.querySelector('.f-desc').value.trim().toUpperCase();
+      const area = row.querySelector('.f-area').value.trim().toUpperCase();
       if(!fotocheck || !name){ showToast('Fotocheck y nombre no pueden estar vacíos.'); return; }
       btn.disabled = true;
       try{
-        await apiPost({ action:'updateWorker', oldFotocheck:w.fotocheck, fotocheck, name }, 4);
-        w.fotocheck = fotocheck; w.name = name;
+        await apiPost({ action:'updateWorker', oldFotocheck:w.fotocheck, fotocheck, name, area }, 4);
+        w.fotocheck = fotocheck; w.name = name; w.area = area;
         showToast('Trabajador actualizado.');
         renderWorkersAdmin();
       }catch(err){
@@ -1503,16 +1542,18 @@ function renderWorkersAdmin(){
 document.getElementById('btn-add-worker').addEventListener('click', async (e)=>{
   const codeEl = document.getElementById('new-worker-code');
   const nameEl = document.getElementById('new-worker-name');
+  const areaEl = document.getElementById('new-worker-area');
   const fotocheck = codeEl.value.trim();
   const name = nameEl.value.trim().toUpperCase();
+  const area = areaEl.value.trim().toUpperCase();
   if(!fotocheck || !name){ showToast('Escribe fotocheck y nombre del trabajador.'); return; }
   if(WORKERS.some(w=>w.fotocheck === fotocheck)){ showToast('Ya existe un trabajador con ese fotocheck.'); return; }
   const btn = e.currentTarget;
   btn.disabled = true;
   try{
-    await apiPost({ action:'addWorker', fotocheck, name }, 4);
-    WORKERS.push({ fotocheck, name });
-    codeEl.value = ''; nameEl.value = '';
+    await apiPost({ action:'addWorker', fotocheck, name, area }, 4);
+    WORKERS.push({ fotocheck, name, area });
+    codeEl.value = ''; nameEl.value = ''; areaEl.value = '';
     showToast('Trabajador agregado.');
     renderWorkersAdmin();
   }catch(err){
