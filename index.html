@@ -531,7 +531,7 @@ const STATUS = {
 };
 
 const ADMIN_CODE = "DRAGADOS-ADMIN";
-const APP_VERSION = "1.7.1";
+const APP_VERSION = "1.7.2";
 const CACHE_TTL_MS = 20000; // reuse fresh-enough data instead of re-fetching every tab switch
 
 /* ---------------- State ---------------- */
@@ -1320,7 +1320,7 @@ async function runExport(btn, fn){
 }
 
 // Header block mirrors the original "FORMATO" sheet: Nº PEDIDO / título /
-// FECHA, then the UNIQ NUM · DESCRIPCION · VARIANTE · USUARIO · AREA table.
+// FECHA, then the UNIQ NUM · DESCRIPCION · VARIANTE · USUARIO table.
 function exportToExcel(rows){
   const aoa = [];
   aoa.push(['Nº PEDIDO', "SOLICITUD DE EPI's", '', '', '']);
@@ -1328,9 +1328,9 @@ function exportToExcel(rows){
   aoa.push(['FECHA', '', '', '', '']);
   aoa.push([new Date().toLocaleDateString('es-PE'), '', '', '', '']);
   aoa.push([]);
-  aoa.push(['UNIQ NUM','DESCRIPCION','VARIANTE','USUARIO','AREA','CANTIDAD','FOTOCHECK','ESTADO','Nº PEDIDO','FECHA PEDIDO']);
+  aoa.push(['UNIQ NUM','DESCRIPCION','VARIANTE','USUARIO','CANTIDAD','FOTOCHECK','ESTADO','Nº PEDIDO','FECHA PEDIDO']);
   rows.forEach(r=>{
-    aoa.push([r.uniqNum, r.descripcion, r.variante, r.usuario, r.area, r.cantidad, r.fotocheck, r.estado, r.pedido, fmtDate(r.fecha)]);
+    aoa.push([r.uniqNum, r.descripcion, r.variante, r.usuario, r.cantidad, r.fotocheck, r.estado, r.pedido, fmtDate(r.fecha)]);
   });
   aoa.push([]);
   aoa.push(['by GUSTAVO DEVELOPER']);
@@ -1338,7 +1338,7 @@ function exportToExcel(rows){
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   ws['!cols'] = [
-    {wch:18},{wch:42},{wch:10},{wch:28},{wch:12},{wch:9},{wch:10},{wch:15},{wch:14},{wch:16}
+    {wch:18},{wch:42},{wch:10},{wch:28},{wch:9},{wch:10},{wch:15},{wch:14},{wch:16}
   ];
   ws['!merges'] = [
     { s:{r:0,c:1}, e:{r:1,c:4} }, // "SOLICITUD DE EPI's" title spans over the label rows
@@ -1388,8 +1388,8 @@ function exportToPDF(rows){
 
   doc.autoTable({
     startY: boxY + boxH + 9,
-    head: [['UNIQ NUM','DESCRIPCION','VARIANTE','USUARIO','AREA','CANT.','FOTOCHECK','ESTADO','Nº PEDIDO','FECHA PEDIDO']],
-    body: rows.map(r=>[r.uniqNum, r.descripcion, r.variante || '-', r.usuario, r.area || '-', r.cantidad, r.fotocheck, r.estado, r.pedido, fmtDate(r.fecha)]),
+    head: [['UNIQ NUM','DESCRIPCION','VARIANTE','USUARIO','CANT.','FOTOCHECK','ESTADO','Nº PEDIDO','FECHA PEDIDO']],
+    body: rows.map(r=>[r.uniqNum, r.descripcion, r.variante || '-', r.usuario, r.cantidad, r.fotocheck, r.estado, r.pedido, fmtDate(r.fecha)]),
     styles:{fontSize:8, cellPadding:3},
     headStyles:{fillColor:[11,87,208], textColor:255},
     alternateRowStyles:{fillColor:[240,243,247]},
