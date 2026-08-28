@@ -229,7 +229,52 @@
     animation:spin .7s linear infinite;
   }
   @keyframes spin{to{transform:rotate(360deg);}}
+  /* ---------- Responsive: tablet & desktop ---------- */
+  /* Below this, the layout stays exactly as it was for mobile. */
   @media (prefers-reduced-motion: reduce){ .spinner{animation:none;} }
+
+  @media (min-width: 700px){
+    .app{max-width:760px;}
+    .epp-item{padding:16px 18px;}
+  }
+
+  @media (min-width: 1000px){
+    .app{max-width:1180px;padding:28px 24px 60px;}
+
+    #view-dashboard{
+      display:grid;
+      grid-template-columns:230px 1fr 280px;
+      grid-template-areas:
+        "who   main  cart"
+        "tabs  main  cart";
+      column-gap:22px;
+      align-items:start;
+    }
+    #view-dashboard .who{
+      grid-area:who;
+      flex-direction:column;align-items:flex-start;gap:10px;
+      background:var(--blue);color:#fff;border:none;
+      position:sticky;top:24px;
+    }
+    #view-dashboard .who .name{color:#fff;}
+    #view-dashboard .who .code{color:rgba(255,255,255,.75);}
+    #view-dashboard .who .exit{color:rgba(255,255,255,.8);}
+    #view-dashboard .tabs{
+      grid-area:tabs;flex-direction:column;background:transparent;padding:0;gap:6px;
+      margin-top:14px;position:sticky;top:150px;
+    }
+    #view-dashboard .tab{text-align:left;padding:11px 14px;}
+    #view-dashboard .tab.active{background:var(--blue);color:#fff;}
+    #tab-pedido, #tab-mios{grid-area:main;}
+    #cart-panel{
+      grid-area:cart;flex-direction:column;align-items:stretch;gap:14px;
+      position:sticky;top:24px;bottom:auto;padding:20px;border-radius:16px;
+    }
+    #cart-panel .cnt{font-size:15px;}
+
+    /* Admin gets the extra width too, so the pedidos table breathes */
+    #view-admin .who{max-width:none;}
+  }
 
   /* ---------- Blinking Friday-deadline notice ---------- */
   .deadline-overlay{
@@ -358,17 +403,17 @@
     <div id="tab-pedido">
       <div class="section-title">Elige tus EPPs</div>
       <div class="epp-list" id="epp-list"></div>
-
-      <div class="card cart-bar">
-        <div class="cnt"><b id="cart-count">0</b> ítem(s) seleccionados</div>
-        <button class="btn btn-primary" id="btn-send-order" disabled>Enviar pedido</button>
-      </div>
     </div>
 
     <!-- Mis pedidos -->
     <div id="tab-mios" class="hidden">
       <div class="section-title">Historial de pedidos</div>
       <div id="orders-list"></div>
+    </div>
+
+    <div class="card cart-bar" id="cart-panel">
+      <div class="cnt"><b id="cart-count">0</b> ítem(s) seleccionados</div>
+      <button class="btn btn-primary" id="btn-send-order" disabled>Enviar pedido</button>
     </div>
   </div>
 
@@ -531,7 +576,7 @@ const STATUS = {
 };
 
 const ADMIN_CODE = "DRAGADOS-ADMIN";
-const APP_VERSION = "1.7.2";
+const APP_VERSION = "1.8.0";
 const CACHE_TTL_MS = 20000; // reuse fresh-enough data instead of re-fetching every tab switch
 
 /* ---------------- State ---------------- */
@@ -712,6 +757,7 @@ function switchTab(tab){
   document.querySelectorAll('.tab[data-tab]').forEach(b=> b.classList.toggle('active', b.dataset.tab === tab));
   document.getElementById('tab-pedido').classList.toggle('hidden', tab !== 'pedido');
   document.getElementById('tab-mios').classList.toggle('hidden', tab !== 'mios');
+  document.getElementById('cart-panel').classList.toggle('hidden', tab !== 'pedido');
   if(tab === 'mios') renderMyOrders();
 }
 
