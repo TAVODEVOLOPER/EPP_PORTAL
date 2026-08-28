@@ -593,7 +593,7 @@ const STATUS = {
 };
 
 const ADMIN_CODE = "DRAGADOS-ADMIN";
-const APP_VERSION = "1.9.0";
+const APP_VERSION = "1.9.1";
 const CACHE_TTL_MS = 20000; // reuse fresh-enough data instead of re-fetching every tab switch
 
 /* ---------------- State ---------------- */
@@ -1491,7 +1491,7 @@ function exportToPDF(rows){
   const pageWidth = doc.internal.pageSize.getWidth();
 
   // --- Header block: mirrors the "SOLICITUD DE EPI's" model ---
-  const boxX = 14, boxY = 10, boxW = 46, boxH = 22;
+  const boxX = 14, boxY = 10, boxW = 46, boxH = 28;
   doc.setDrawColor(0);
   doc.setLineWidth(0.4);
   doc.rect(boxX, boxY, boxW, boxH);
@@ -1501,7 +1501,7 @@ function exportToPDF(rows){
   doc.setFont(undefined, 'bold');
   doc.setFontSize(9);
   doc.setTextColor(20,25,35);
-  doc.text('Nº PEDIDO', boxX + boxW/2, boxY + 8, { align:'center' });
+  doc.text('Nº PEDIDO', boxX + boxW/2, boxY + 9, { align:'center' });
   doc.text('FECHA', boxX + boxW/2, midY + 6, { align:'center' });
   doc.setFont(undefined, 'normal');
   doc.text(new Date().toLocaleDateString('es-PE'), boxX + boxW/2, midY + 12, { align:'center' });
